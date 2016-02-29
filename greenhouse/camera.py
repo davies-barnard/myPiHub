@@ -1,23 +1,31 @@
-from picamera import PiCamera
-from time import sleep
+import os, sys
 import datetime
-import os
+from time import sleep
+from logger import *
+from picamera import PiCamera
+
+
+
 
 #http://imageio.readthedocs.io/en/latest/
 try:
   import imageio
 except ImportError:
-  print("This script requires imageio")
+  #logging.critical("This script requires imageio")
   sys.exit()
 
 #https://www.raspberrypi.org/products/sense-hat/
 try:
   from sense_hat import SenseHat
 except ImportError:
-
+  #logging.critical("This rPi has no SenseHat or the Library")
+  sys.exit()
 
 """This is a picamera wrapper with helper methods for doing cool camera like things"""
 class CamWrap():
+
+    
+
 
     camera = None
     sHat = None
@@ -25,6 +33,10 @@ class CamWrap():
 
     ## This is the constructor
     def __init__(self):
+
+        self.logger = initialize_logger()
+        self.log("info","CamWrap Started and Logger Initialised")
+          
         self.camera = PiCamera()
         self.camera.rotation = 0
 
@@ -32,7 +44,17 @@ class CamWrap():
           self.sHat = SenseHat()
           self.sHat.set_rotation(270)          
         except:
-          print("No Sense Hat available")
+          self.log("critical","No SenseHat connected")
+
+
+
+    ## Logging Method
+    def log(self, status, msg):
+        ds = datetime.datetime.now().strftime("%Y%m%d_%H%M")
+        if status == "critical":
+            self.logger.critical(ds + ": " + msg)
+        elif status == "info":
+            self.logger.info(ds + ": " + msg)
 
 
     ## This method takes a string and sets it as the message on the Sense Hat
@@ -85,8 +107,11 @@ class CamWrap():
             self.camera.stop_preview()
             self.sHat.clear()
 
+        #If we have grabbed some images then we can make our gif and delete the captures.
         if len(images) > 2:
             agif = self.makeGif(images, path + ".gif")
+            for image in images:
+              os.remove(image)
             
 
     ## This method uses all the filenames to create a animated gif
@@ -115,8 +140,18 @@ class CamWrap():
 """Running in STANDALONE mode."""
 if __name__ == "__main__":
 
+  if len(sys.argv) <= 1:
+    print("""You need to tell me what to do.""")
+
+  elif sys.argv[1] == '--timelapse':
     cw = CamWrap()
     ds = cw.getTimeStamp()
     cw.recordTimeLapse('./captures/' + ds,"jpg",5,1)
-    #cw.takePhoto('./captures/' + ds,"jpg")
-    #cw.watchingYou()
+
+  elif sys.argv[1] == "--photo":
+    cw = CamWrap()
+    ds = cw.getTimeStamp()
+    cw.takePhoto('./captures/' + ds,"jpg")
+
+  else:
+    print("Unknown Option")
