@@ -3,7 +3,7 @@ import datetime
 from time import sleep
 from logger import *
 from picamera import PiCamera
-
+from PIL import image
 
 
 
@@ -23,9 +23,6 @@ except ImportError:
 
 """This is a picamera wrapper with helper methods for doing cool camera like things"""
 class CamWrap():
-
-    
-
 
     camera = None
     sHat = None
@@ -135,6 +132,11 @@ class CamWrap():
             print(e)
         finally:
             exit()
+
+
+    ## Resize images
+    def resizeImage(self):
+      print("Resizing Image")
 
 
 """Running in STANDALONE mode."""
