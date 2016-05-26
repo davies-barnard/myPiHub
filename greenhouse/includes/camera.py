@@ -45,13 +45,7 @@ class CamWrap():
 
 
 
-    ## Logging Method
-    def log(self, status, msg):
-        ds = datetime.datetime.now().strftime("%Y%m%d_%H%M")
-        if status == "critical":
-            self.logger.critical(ds + ": " + msg)
-        elif status == "info":
-            self.logger.info(ds + ": " + msg)
+
 
 
     ## This method takes a string and sets it as the message on the Sense Hat

@@ -1,7 +1,8 @@
+import datetime
 import logging
 import os.path
 
-def initialize_logger(output_dir = "./logs"):
+def initialize_logger(output_dir):
 
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
@@ -32,3 +33,11 @@ def initialize_logger(output_dir = "./logs"):
 
     return logger
 
+def log(logger,status,msg):
+    dt = datetime.datetime.now().strftime("%Y%m%d_%H:%M")
+    msg = dt + ": " + msg
+    if status == 'info':
+        logger.info(msg)
+    elif status == 'critical':
+        logger.critical(msg)
+    
