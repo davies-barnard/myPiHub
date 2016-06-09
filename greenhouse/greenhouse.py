@@ -1,18 +1,29 @@
 import sys
 import os
+from subprocess import *
+
+#For configuration and logging.
 from configobj import ConfigObj
 from includes.logger import *
+
 #For date and time related stuff
 from time import sleep, time, mktime
 from datetime import datetime, timedelta
+
 #For the camera and image elements
 from picamera import PiCamera
 from PIL import Image
 import imageio  #http://imageio.readthedocs.io/en/latest/
+
 #For Twitter and Tweeting
 import tweepy #http://docs.tweepy.org/en/v3.5.0/
+
 #For Sun Rise and Set
 import ephem
+
+#For the temperature probes etc.
+from includes.tempprobe import TempProbe
+from includes.lcdcontroller import LCDController
 
 """ This class extends Thread with a Timelapsing and tweeting Class
 This method will take a series of photos and then
@@ -22,7 +33,7 @@ class Greenhouse():
 
     camera = None
     images = []
-    
+        
 
     """Set some args and start a thread."""
     def __init__(self,sysArgs):
@@ -34,10 +45,15 @@ class Greenhouse():
         self.logger = Logger(self.config['Greenhouse']['log_folder'], self.config['Greenhouse']['debug'])
         self.logger.log("info","Greenhouse System Started")
 
-        self.cameraSetup()
+        #Set up the temp probe etc.
+        self.tp = TempProbe()
+        self.lcd = LCDController(self.logger)
+
+        #Set up the camera
+        #self.cameraSetup()
         self.twitterSetup()
-    	self.countToHour = 0
-    	self.sunSetRise()
+        self.countToHour = 0
+        self.sunSetRise()
         self.run()
 
     
@@ -52,6 +68,7 @@ class Greenhouse():
         self.logger.log("info",str(res))
         self.camera.resolution = res
 
+
     """Application twitter object that will be used to interact with the api"""
     def twitterSetup(self):
         self.logger.log("info","Twitter Set Up")
@@ -59,19 +76,23 @@ class Greenhouse():
         auth.set_access_token(self.config['Twitter']['access_token'],self.config['Twitter']['access_secret'])
         self.twitter = tweepy.API(auth)       
 
+
     """The run method that periodically checks for a kill flag"""
     def run(self):
 
-	self.logger.log("info","Greenhouse is running")
+        self.logger.log("info","Greenhouse is running")
         while True:
             
             #This is what we do all the time
             try:
 
                 #Capture the next image (if its time)
-		self.captureTimeLapseImage()
+                #self.captureTimeLapseImage()
 
-		#Sleep the system for the specified time.
+                #Get the current temperature
+                self.getMetrics()
+
+                #Sleep the system for the specified time.
                 sleep(int(self.config['Greenhouse']['looptime']))
                 
             #Unless there is a CTRL-C Keyboard interupt
@@ -81,18 +102,33 @@ class Greenhouse():
 
         #Log that we are shuting down the system    
         self.logger.log("info","Greenhouse is closing")
-            
+
+    """Run a terminal command on the pi"""
+    def runCommand(self,cmd):
+        process = Popen(cmd, shell=True, stdout=PIPE)
+        output = process.communicate()[0]
+        return output
 
     """Convert the current timestamp into a datetime string"""
     def getTimeStamp(self):
         ds = datetime.now().strftime("%Y%m%d_%H%M%S")
         return ds
 
+
+    """Get the IP Address of the Pi"""
+    def getIpAddress(self):
+        cmd = "ip addr show eth0 | grep inet | awk '{print $2}' | cut -d/ -f1"
+        ipaddress = self.runCommand(cmd)
+        ipaddress = ipaddress.split("\n")
+        self.logger.log("info",ipaddress[0])
+        return ipaddress
+
+
     """This method calculates the delay in seconds till the next hour"""
     def delayToHour(self):
         next_hour = (datetime.now() + timedelta(hours=1)).replace(minute=0, second=0, microsecond=0)
         self.countToHour = 10 #int((next_hour - datetime.now()).seconds)
-	self.logger.log("info",str(self.countToHour) + " to next photo")
+        self.logger.log("info",str(self.countToHour) + " to next photo")
 
 
     """Record a timelapse series of images and create an animated gif."""
@@ -100,7 +136,7 @@ class Greenhouse():
 
         #Is it time to capture an image?
         self.countToHour -=  1
-	
+    
         #If sunrise is greated than sunset then the next morning is yet to come.
         if len(self.images) < 10: #self.sunrise > self.sunset:
 
@@ -152,18 +188,28 @@ class Greenhouse():
 
     """Calculate the Naval Sun Rise and Set so we don't take photos during the night"""
     def sunSetRise(self):
-	somewhere = ephem.Observer()
-	somewhere.lat = self.config['Greenhouse']['Location']['latitude']
-	somewhere.lon = self.config['Greenhouse']['Location']['longitude']
-	somewhere.elevation = int(self.config['Greenhouse']['Location']['elevation'])
-	somewhere.horizon = '-0:34'
+        somewhere = ephem.Observer()
+        somewhere.lat = self.config['Greenhouse']['Location']['latitude']
+        somewhere.lon = self.config['Greenhouse']['Location']['longitude']
+        somewhere.elevation = int(self.config['Greenhouse']['Location']['elevation'])
+        somewhere.horizon = '-0:34'
 
-	sun = ephem.Sun()
-	self.sunrise = somewhere.next_rising(sun)
-	self.sunset = somewhere.next_setting(sun)
-	self.sunrisets = int(mktime(ephem.localtime(self.sunrise).timetuple()))
+        sun = ephem.Sun()
+        self.sunrise = somewhere.next_rising(sun)
+        self.sunset = somewhere.next_setting(sun)
+        self.sunrisets = int(mktime(ephem.localtime(self.sunrise).timetuple()))
         self.sunsetts = int(mktime(ephem.localtime(self.sunset).timetuple()))
-	self.logger.log ("info", ("Sun Rise/Set at %s is %s %s" %(time(),self.sunrise, self.sunset)))
+        self.logger.log ("info", ("Sun Rise/Set at %s is %s %s" %(time(),self.sunrise, self.sunset)))
+
+    """Get the current temperature and other metrics"""
+    def getMetrics(self):
+        temps = self.tp.readTemp()
+        ipaddr = self.getIpAddress()
+        outStr = "Temp: %.2fC (%.2fF)" % temps
+        self.logger.log("info","Temp: %.2fC (%.2fF)" % temps)
+        self.lcd.setMessage("Temp: %.2fC\nIP: %s" % (temps[0],ipaddr))
+        
+    
 
 """Running in STAND ALONE mode."""
 if __name__ == "__main__":
