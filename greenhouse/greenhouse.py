@@ -1,83 +1,172 @@
+import sys
+import os
 from configobj import ConfigObj
 from includes.logger import *
-import time
-from threading import Thread
-import sys
-
+#For date and time related stuff
+from time import sleep, time, mktime
+from datetime import datetime, timedelta
+#For the camera and image elements
+from picamera import PiCamera
+from PIL import Image
+import imageio  #http://imageio.readthedocs.io/en/latest/
+#For Twitter and Tweeting
+import tweepy #http://docs.tweepy.org/en/v3.5.0/
+#For Sun Rise and Set
+import ephem
 
 """ This class extends Thread with a Timelapsing and tweeting Class
-" This method will take a series of photos and then
-" tweet the resulting image to tweeter. """
-class TimelapseThread(Thread):
+This method will take a series of photos and then
+tweet the resulting image to tweeter. """
+class Greenhouse():
+
+
+    camera = None
+    images = []
+    
 
     """Set some args and start a thread."""
-    def __init__(self,logger,duration,interval):
+    def __init__(self,sysArgs):
+
+        #Load the configuration file.
+        self.config = ConfigObj('greenhouse.conf')
+
+        #Initialize the logger and send a starting entry.
+        self.logger = Logger(self.config['Greenhouse']['log_folder'], self.config['Greenhouse']['debug'])
+        self.logger.log("info","Greenhouse System Started")
+
+        self.cameraSetup()
+        self.twitterSetup()
+    	self.countToHour = 0
+    	self.sunSetRise()
+        self.run()
+
     
-        #Our thread.
-        Thread.__init__(self)
+    """Set up the camera"""
+    def cameraSetup(self):
+        self.logger.log("info","Camera Set Up")
+          
+        self.camera = PiCamera()
+        self.camera.rotation = self.config['Camera']['rotation']
 
-        # A flag to notify the thread that it should finish up and exit
-        self.kill_received = False
+        res = (int(self.config['Camera']['resolution'][0]),int(self.config['Camera']['resolution'][1]))
+        self.logger.log("info",str(res))
+        self.camera.resolution = res
 
-        # The logger object from its parent
-        self.logger = logger
-        
-        # Some args used by the main function
-        self.duration = duration
-        self.interval = interval
-
+    """Application twitter object that will be used to interact with the api"""
+    def twitterSetup(self):
+        self.logger.log("info","Twitter Set Up")
+        auth = tweepy.OAuthHandler(self.config['Twitter']['consumer_key'],self.config['Twitter']['consumer_secret'])
+        auth.set_access_token(self.config['Twitter']['access_token'],self.config['Twitter']['access_secret'])
+        self.twitter = tweepy.API(auth)       
 
     """The run method that periodically checks for a kill flag"""
     def run(self):
-        while not self.kill_received:
-            self.timelapse()
 
-    """The main timelapse method """
-    def timelapse(self):
-        log(self.logger,"info","Time Lapsing Tweet")
-
-        self.count = int(self.duration / self.interval)
-        for i in range(0,self.count):
-            print("Take Photo")
-            time.sleep(self.interval)
+	self.logger.log("info","Greenhouse is running")
+        while True:
             
-        print("Produce TL and Tweet")
+            #This is what we do all the time
+            try:
+
+                #Capture the next image (if its time)
+		self.captureTimeLapseImage()
+
+		#Sleep the system for the specified time.
+                sleep(int(self.config['Greenhouse']['looptime']))
+                
+            #Unless there is a CTRL-C Keyboard interupt
+            except KeyboardInterrupt:
+                self.logger.log("info","Ctrl-c received!")
+                break
+
+        #Log that we are shuting down the system    
+        self.logger.log("info","Greenhouse is closing")
+            
+
+    """Convert the current timestamp into a datetime string"""
+    def getTimeStamp(self):
+        ds = datetime.now().strftime("%Y%m%d_%H%M%S")
+        return ds
+
+    """This method calculates the delay in seconds till the next hour"""
+    def delayToHour(self):
+        next_hour = (datetime.now() + timedelta(hours=1)).replace(minute=0, second=0, microsecond=0)
+        self.countToHour = 10 #int((next_hour - datetime.now()).seconds)
+	self.logger.log("info",str(self.countToHour) + " to next photo")
 
 
+    """Record a timelapse series of images and create an animated gif."""
+    def captureTimeLapseImage(self):
 
+        #Is it time to capture an image?
+        self.countToHour -=  1
+	
+        #If sunrise is greated than sunset then the next morning is yet to come.
+        if len(self.images) < 10: #self.sunrise > self.sunset:
 
-""" The MAIN Greenhouse Program starts here """
-def main(args):
+            #If our countdown has reached zero take a photo
+            if self.countToHour <= 0:
+                
+                #Try and capture an image
+                try:
+                    sleep(3) #! Important Sleep for >2secs for light levels
+                    imgname = self.config['Greenhouse']['image_folder'] + "image" + "_" + self.getTimeStamp() + ".jpg"
+                    self.camera.capture(imgname)
+                    self.images.append(imgname)
+                    self.logger.log("info","Capture Time Lapse Caught" + str(len(self.images)))       
+                    self.delayToHour()
 
-    #Load the configuration file.
-    config = ConfigObj('greenhouse.conf')
+                #Camera IO Error
+                except IOError as e:
+                    self.logger.log("critical","Capture Time Lapse Error:" + e)
 
-    #Initialize the logger and send a starting entry.
-    logger = initialize_logger(config['Greenhouse']['log_folder'])
-    log(logger,"info","Greenhouse System Started")
+        #Its night time and we should compile our timelapse
+        else:
+            self.logger.log("info","Produce Time Lapse Caught")
+            #If we have grabbed some images then we can make our gif and delete the captures.
+            agif = self.makeGif(self.images)
+            for image in self.images:
+                os.remove(image)
+            self.images = []
 
-    #Create our threads for the system
-    threads = []
-    for i in range(10):
-        t = TimelapseThread(logger,5,1)
-        threads.append(t)
-        t.start()
+            #Tweet the timelapse
+            self.sendTweetWithMedia("Greenhouse Tweet Test",agif)
 
-    #Keep the program running while we have threads and no one has pressed CTRL-C
-    while len(threads) > 0:
-        try:
-            # Join all threads using a timeout so it doesn't block
-            # Filter out threads which have been joined or are None
-            threads = [t.join(1) for t in threads if t is not None and t.isAlive()]
-        except KeyboardInterrupt, SystemExit:
-            log(logger,"info","Ctrl-c received! Sending kill to threads...") 
-            for t in threads:
-                t.kill_received = True
+    ## This method uses all the filenames to create a animated gif
+    def makeGif(self, filenames):
 
-      
+        # Load each file into a list
+        frames = []
+        for filename in filenames:
+            frames.append(imageio.imread(filename))
+
+        # Save them as frames into a gif and return the filename
+        filename = str(int(time())) #str(self.sunset).replace("/","").replace(":","").replace(" ","")
+        exportname = self.config['Greenhouse']['image_folder'] + filename + ".gif"
+        imageio.mimsave(exportname, frames)
+        return exportname
+
+    """ Send with image """
+    def sendTweetWithMedia(self,status,photo_path):
+        self.twitter.update_with_media(photo_path,status)
+
+    """Calculate the Naval Sun Rise and Set so we don't take photos during the night"""
+    def sunSetRise(self):
+	somewhere = ephem.Observer()
+	somewhere.lat = self.config['Greenhouse']['Location']['latitude']
+	somewhere.lon = self.config['Greenhouse']['Location']['longitude']
+	somewhere.elevation = int(self.config['Greenhouse']['Location']['elevation'])
+	somewhere.horizon = '-0:34'
+
+	sun = ephem.Sun()
+	self.sunrise = somewhere.next_rising(sun)
+	self.sunset = somewhere.next_setting(sun)
+	self.sunrisets = int(mktime(ephem.localtime(self.sunrise).timetuple()))
+        self.sunsetts = int(mktime(ephem.localtime(self.sunset).timetuple()))
+	self.logger.log ("info", ("Sun Rise/Set at %s is %s %s" %(time(),self.sunrise, self.sunset)))
 
 """Running in STAND ALONE mode."""
 if __name__ == "__main__":
-    main(sys.argv)
+    greenhouse = Greenhouse(sys.argv)
 
     

@@ -2,42 +2,46 @@ import datetime
 import logging
 import os.path
 
-def initialize_logger(output_dir):
 
-    if not os.path.exists(output_dir):
-        os.makedirs(output_dir)
+class Logger():
     
-    logger = logging.getLogger()
-    logger.setLevel(logging.DEBUG)
-    
-    # create console handler and set level to info
-    handler = logging.StreamHandler()
-    handler.setLevel(logging.INFO)
-    formatter = logging.Formatter("%(levelname)s - %(message)s")
-    handler.setFormatter(formatter)
-    logger.addHandler(handler)
+    def __init__(self,output_dir,debug_level):
 
-    # create error file handler and set level to error
-    handler = logging.FileHandler(os.path.join(output_dir, "error.log"),"w", encoding=None, delay="true")
-    handler.setLevel(logging.ERROR)
-    formatter = logging.Formatter("%(levelname)s - %(message)s")
-    handler.setFormatter(formatter)
-    logger.addHandler(handler)
+        self.debug = debug_level
 
-    # create debug file handler and set level to debug
-    handler = logging.FileHandler(os.path.join(output_dir, "all.log"),"w")
-    handler.setLevel(logging.DEBUG)
-    formatter = logging.Formatter("%(levelname)s - %(message)s")
-    handler.setFormatter(formatter)
-    logger.addHandler(handler)
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
+        
+        self.logger = logging.getLogger()
+        self.logger.setLevel(logging.DEBUG)
+        
+        # create console handler and set level to info
+        handler = logging.StreamHandler()
+        handler.setLevel(logging.INFO)
+        formatter = logging.Formatter("%(levelname)s - %(message)s")
+        handler.setFormatter(formatter)
+        self.logger.addHandler(handler)
 
-    return logger
+        # create error file handler and set level to error
+        handler = logging.FileHandler(os.path.join(output_dir, "error.log"),"w", encoding=None, delay="true")
+        handler.setLevel(logging.ERROR)
+        formatter = logging.Formatter("%(levelname)s - %(message)s")
+        handler.setFormatter(formatter)
+        self.logger.addHandler(handler)
 
-def log(logger,status,msg):
-    dt = datetime.datetime.now().strftime("%Y%m%d_%H:%M")
-    msg = dt + ": " + msg
-    if status == 'info':
-        logger.info(msg)
-    elif status == 'critical':
-        logger.critical(msg)
+        # create debug file handler and set level to debug
+        handler = logging.FileHandler(os.path.join(output_dir, "all.log"),"w")
+        handler.setLevel(logging.DEBUG)
+        formatter = logging.Formatter("%(levelname)s - %(message)s")
+        handler.setFormatter(formatter)
+        self.logger.addHandler(handler)
+
+
+    def log(self,status,msg):
+        dt = datetime.datetime.now().strftime("%Y%m%d_%H:%M:%S")
+        msg = dt + ": " + msg
+        if status == 'info' and self.debug:
+            self.logger.info(msg)
+        elif status == 'critical':
+            self.logger.critical(msg)
     
