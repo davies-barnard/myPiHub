@@ -24,6 +24,7 @@ import ephem
 #For the temperature probes etc.
 from includes.tempprobe import TempProbe
 from includes.lcdcontroller import LCDController
+from includes.database import Database
 
 """ This class extends Thread with a Timelapsing and tweeting Class
 This method will take a series of photos and then
@@ -40,12 +41,16 @@ class Greenhouse():
 
         #Load the configuration file.
         self.config = ConfigObj('greenhouse.conf')
-
+        
         #Initialize the logger and send a starting entry.
         self.logger = Logger(self.config['Greenhouse']['log_folder'], self.config['Greenhouse']['debug'])
         self.logger.log("info","Greenhouse System Started")
 
+        #Create a report generator object
+        #self.reporter = ReportGenerator()
+
         #Set up the temp probe etc.
+        self.db = Database(self.logger,self.config['Database'])
         self.tp = TempProbe()
         self.lcd = LCDController(self.logger)
 
@@ -94,6 +99,9 @@ class Greenhouse():
 
                 #Sleep the system for the specified time.
                 sleep(int(self.config['Greenhouse']['looptime']))
+
+                #Updates Reports based on interval.
+                #reportGenerator.run()
                 
             #Unless there is a CTRL-C Keyboard interupt
             except KeyboardInterrupt:
@@ -103,11 +111,13 @@ class Greenhouse():
         #Log that we are shuting down the system    
         self.logger.log("info","Greenhouse is closing")
 
+
     """Run a terminal command on the pi"""
     def runCommand(self,cmd):
         process = Popen(cmd, shell=True, stdout=PIPE)
         output = process.communicate()[0]
         return output
+
 
     """Convert the current timestamp into a datetime string"""
     def getTimeStamp(self):
@@ -121,7 +131,7 @@ class Greenhouse():
         ipaddress = self.runCommand(cmd)
         ipaddress = ipaddress.split("\n")
         self.logger.log("info",ipaddress[0])
-        return ipaddress
+        return ipaddress[0]
 
 
     """This method calculates the delay in seconds till the next hour"""
@@ -168,7 +178,8 @@ class Greenhouse():
             #Tweet the timelapse
             self.sendTweetWithMedia("Greenhouse Tweet Test",agif)
 
-    ## This method uses all the filenames to create a animated gif
+
+    """ This method uses all the filenames to create a animated gif """
     def makeGif(self, filenames):
 
         # Load each file into a list
@@ -182,9 +193,11 @@ class Greenhouse():
         imageio.mimsave(exportname, frames)
         return exportname
 
+
     """ Send with image """
     def sendTweetWithMedia(self,status,photo_path):
         self.twitter.update_with_media(photo_path,status)
+
 
     """Calculate the Naval Sun Rise and Set so we don't take photos during the night"""
     def sunSetRise(self):
@@ -201,6 +214,7 @@ class Greenhouse():
         self.sunsetts = int(mktime(ephem.localtime(self.sunset).timetuple()))
         self.logger.log ("info", ("Sun Rise/Set at %s is %s %s" %(time(),self.sunrise, self.sunset)))
 
+
     """Get the current temperature and other metrics"""
     def getMetrics(self):
         temps = self.tp.readTemp()
@@ -208,6 +222,7 @@ class Greenhouse():
         outStr = "Temp: %.2fC (%.2fF)" % temps
         self.logger.log("info","Temp: %.2fC (%.2fF)" % temps)
         self.lcd.setMessage("Temp: %.2fC\nIP: %s" % (temps[0],ipaddr))
+        self.db.createArchive(time(),temps[0])
         
     
 

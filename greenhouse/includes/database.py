@@ -5,7 +5,7 @@ import os.path
 class Database():
 	
 	#Main Variables
-	dbFile = "greenhouse.sdb"
+	dbFile = None
 	tables = {
 		'archive':
 			"""CREATE TABLE IF NOT EXISTS archive (
@@ -18,15 +18,20 @@ class Database():
 	con = None
 	
 	#Intialisation Method
-	def __init__(self):
+	def __init__(self, logger, myconfig):
+
+                self.config = myconfig
+                self.dbFile = self.config['dbName']
+
+                self.logger = logger
 		
 		self.firstTimeRun()
 		
 		response = self.runQuery("SELECT SQLITE_VERSION()",fetchall=False)
-		print (response)
+		self.logger.log("Info",str(response))
 		
 		response = self.runQuery("SELECT name FROM sqlite_master WHERE type='table';",fetchall=True)
-		print (response)
+		self.logger.log("Info",str(response))
 
 
 	def runQuery(self,sql,fetchall):
@@ -43,7 +48,7 @@ class Database():
 				data = cur.fetchone()
 
 		except lite.Error as e:
-			print ("Error %s:" % e.args[0])
+			self.logger.log("critical","Error %s:" % e.args[0])
 			sys.exit(1)
 
 		finally:
@@ -53,26 +58,17 @@ class Database():
 				
 		return data
 
-#					cur.execute("SELECT name FROM sqlite_master WHERE type='table';")
-#					print(cur.fetchall())
-
-#					cur.execute('select * from dances')
-#					data=cur.fetchone()
-#					print(cur.description)
-
-
 	"""firstTimeRun Method - If the database does not exist we will create our tables"""
 	def firstTimeRun(self):
 		
-		print ("First Time Run")
 		try:		
 			self.con = lite.connect(self.dbFile)
 			cur = self.con.cursor()
 			for tName, tQuery in self.tables.iteritems():
 				cur.execute(tQuery)
-				print ("Table",tName,"Created")
+				
 		except lite.Error as e:
-			print ("Error %s:" % e.args[0])
+			self.logger.log("critical","Error %s:" % e.args[0])
 			sys.exit(1)
 
 		finally:
@@ -85,14 +81,14 @@ class Database():
 	def createArchive(self,tS,tC):		
 		try:
 			if not self.con:
-				self.con	 = lite.connect(self.dbFile)
+				self.con = lite.connect(self.dbFile)
 			cur = self.con.cursor()
 			sql = "INSERT INTO archive (ts, temp) VALUES (" + str(tS) + "," + str(tC) + ")"
 			res = cur.execute(sql)
 			self.con.commit()			
-			print (sql)	
+		
 		except lite.Error as e:
-			print ("Error %s:" % e.args[0])
+			self.logger.log("critical","Error %s:" % e.args[0])
 			sys.exit(1)
 		finally:
 			if self.con:
