@@ -1,30 +1,30 @@
 import sys
 import os
 from subprocess import *
-
-#For configuration and logging.
-from configobj import ConfigObj
-from includes.logger import *
-
-#For date and time related stuff
-from time import sleep, time, mktime
+from time import sleep, time, mktime #For date and time related stuff
 from datetime import datetime, timedelta
 
-#For the camera and image elements
-from picamera import PiCamera
+#Custom PIP imports
+from configobj import ConfigObj #For configuration.
 from PIL import Image
 import imageio  #http://imageio.readthedocs.io/en/latest/
-
-#For Twitter and Tweeting
 import tweepy #http://docs.tweepy.org/en/v3.5.0/
+import ephem #For Sun Rise and Set
 
-#For Sun Rise and Set
-import ephem
-
-#For the temperature probes etc.
-from includes.tempprobe import TempProbe
-from includes.lcdcontroller import LCDController
+#Greenhouse include imports
 from includes.database import Database
+from includes.logger import *
+from includes.reportgenerator import ReportGenerator
+
+#Raspberry Pi specific imports
+try:
+  from picamera import PiCamera
+  from includes.tempprobe import TempProbe #For the temperature probes etc.
+  from includes.lcdcontroller import LCDController
+except ImportError:
+  print ("Are we running on a RPi?")
+
+
 
 """ This class extends Thread with a Timelapsing and tweeting Class
 This method will take a series of photos and then
@@ -37,7 +37,7 @@ class Greenhouse():
         
 
     """Set some args and start a thread."""
-    def __init__(self,sysArgs):
+    def __init__(self):
 
         #Load the configuration file.
         self.config = ConfigObj('greenhouse.conf')
@@ -46,21 +46,24 @@ class Greenhouse():
         self.logger = Logger(self.config['Greenhouse']['log_folder'], self.config['Greenhouse']['debug'])
         self.logger.log("info","Greenhouse System Started")
 
-        #Create a report generator object
-        #self.reporter = ReportGenerator()
-
         #Set up the temp probe etc.
         self.db = Database(self.logger,self.config['Database'])
-        self.tp = TempProbe()
-        self.lcd = LCDController(self.logger)
 
+        #Create a report generator object
+        self.reporter = ReportGenerator(self.logger,self.config['Reports'],self.db)
+
+        
         #Set up the camera
         #self.cameraSetup()
         self.twitterSetup()
         self.countToHour = 0
         self.sunSetRise()
-        self.run()
-
+        
+        #Raspberry Pi / Run mode specifics
+        if self.config['Greenhouse']['simulator'] == False:
+          self.tp = TempProbe()
+          self.lcd = LCDController(self.logger)
+        
     
     """Set up the camera"""
     def cameraSetup(self):
@@ -95,13 +98,14 @@ class Greenhouse():
                 #self.captureTimeLapseImage()
 
                 #Get the current temperature
-                self.getMetrics()
+                if self.config['Greenhouse']['simulator'] == False:
+                  self.getMetrics()
 
                 #Sleep the system for the specified time.
                 sleep(int(self.config['Greenhouse']['looptime']))
 
                 #Updates Reports based on interval.
-                #reportGenerator.run()
+                self.report()
                 
             #Unless there is a CTRL-C Keyboard interupt
             except KeyboardInterrupt:
@@ -111,6 +115,12 @@ class Greenhouse():
         #Log that we are shuting down the system    
         self.logger.log("info","Greenhouse is closing")
 
+
+    """Run the reports as per the configuration file"""
+    def report(self):
+        
+        self.reporter.run()
+    
 
     """Run a terminal command on the pi"""
     def runCommand(self,cmd):
@@ -228,6 +238,16 @@ class Greenhouse():
 
 """Running in STAND ALONE mode."""
 if __name__ == "__main__":
-    greenhouse = Greenhouse(sys.argv)
-
+  
+  if len(sys.argv) == 1 or sys.argv[1] == '-run':
+    greenhouse = Greenhouse()
+    greenhouse.run()
+    
+  elif sys.argv[1] == '-report':
+    greenhouse = Greenhouse()
+    greenhouse.report()
+    
+  else:
+    print ("Help")
+  
     
