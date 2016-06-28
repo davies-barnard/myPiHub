@@ -16,6 +16,8 @@ import plotly.graph_objs as go # (*) Graph objects to piece together plots
 
 import numpy as np # (*) numpy for math functions and arrays
 
+#http://stackoverflow.com/questions/4296249/how-do-i-convert-a-hex-triplet-to-an-rgb-tuple-and-back
+_NUMERALS = '0123456789abcdefABCDEF'
 _HEXDEC = {v: int(v, 16) for v in (x+y for x in _NUMERALS for y in _NUMERALS)}
 
 class Plotter:
@@ -31,22 +33,30 @@ class Plotter:
   
   
   """This is the initialisation function called when the program starts"""
-  def __init__(self,logger,interval,parameters,xData,yData):
+  def __init__(self,logger, path, plotoptions, interval,parameters,xData,yData):
     self.logger = logger
+    self.plotoptions = plotoptions
     self.interval = interval
     self.parameters = parameters
     self.plotX = xData
     self.plotY = yData
-    
+    self.plotPath = path + "/plots/"
     self.plotGen()
 
 
   """Convert HEX to RGB"""
-  def rgb(triplet):
-      return _HEXDEC[triplet[0:2]], _HEXDEC[triplet[2:4]], _HEXDEC[triplet[4:6]]
+  def rgb(self,triplet):    
+      r = int(_HEXDEC[triplet[0:2]])
+      g = int(_HEXDEC[triplet[2:4]])
+      b = int(_HEXDEC[triplet[4:6]])
+      retStr = "rgb(%d,%d,%d,1.0)" % (r, g, b)
+      print (retStr)
+      return retStr
 
   """This method updates the plotly plot"""
   def plotGen(self):
+
+    self.rgb('AABBCC')
   
     # Create a trace    
     trace = go.Scatter(
@@ -54,7 +64,7 @@ class Plotter:
       y=self.plotY,
       mode = 'lines',
       marker = dict (
-        color = rgb(self.interval['linecolor']),
+        color = 'rgba(152, 0, 0, .8)',
         line = dict (
           width = 1,
         )
@@ -67,9 +77,17 @@ class Plotter:
     #Update the plot
     try:
       #self.plot_url = py.plot(data, filename=self.plotname.lower().replace(" ","_"))
-      layout = go.Layout(title=self.interval, width=800, height=640)
+      layout = go.Layout(
+        title = self.interval.title(),
+        font= dict(
+          family = self.plotoptions['fontfamily'],
+          size = self.plotoptions['fontsize'],
+          color = self.plotoptions['fontcolor']
+        ),
+        width=self.plotoptions['width'],
+        height=self.plotoptions['height'])
       fig = go.Figure(data=data, layout=layout)
-      py.image.save_as(fig, filename=self.interval+'.png')
+      py.image.save_as(fig, filename=self.plotPath + self.interval+'.png')
       
     except:
       self.logger.log("Plot Error: " + sys.exc_info()[0])

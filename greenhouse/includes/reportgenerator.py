@@ -19,7 +19,7 @@ class ReportGenerator():
       self.logger.log("info","Running Reports")
       
       #For each of the plotting intervals in the configuration file
-      for interval, parameters in self.config.items():
+      for interval, parameters in self.config['Plots'].items():
         self.logger.log("info","Running report for " + interval)
         
         if float(parameters['timediff']) > 0.0:
@@ -41,11 +41,10 @@ class ReportGenerator():
         #Convert them into lists
         timeline = list(timeline)
         temps = list(temps)
-        print(timeline,temps)
         
         #plot chart
         timeline = [ datetime.datetime.fromtimestamp(int(d)).strftime('%Y-%m-%d %H:%M:%S') for d in timeline]
-        Plotter(self.logger, interval, parameters, timeline, temps,)
+        Plotter(self.logger, self.config['path'], self.config['PlotOptions'], interval, parameters, timeline, temps,)
         
         #Get maximums, minimums and averages
         maximum = max(temps)

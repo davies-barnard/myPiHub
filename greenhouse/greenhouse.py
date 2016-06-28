@@ -60,7 +60,10 @@ class Greenhouse():
         self.sunSetRise()
         
         #Raspberry Pi / Run mode specifics
-        if self.config['Greenhouse']['simulator'] == False:
+        if self.config['Greenhouse']['simulator'] == 1:
+          self.config['Greenhouse']['simulator'] = True
+        else:
+          self.config['Greenhouse']['simulator'] = False
           self.tp = TempProbe()
           self.lcd = LCDController(self.logger)
         
@@ -98,7 +101,7 @@ class Greenhouse():
                 #self.captureTimeLapseImage()
 
                 #Get the current temperature
-                if self.config['Greenhouse']['simulator'] == False:
+                if not self.config['Greenhouse']['simulator']:
                   self.getMetrics()
 
                 #Sleep the system for the specified time.
