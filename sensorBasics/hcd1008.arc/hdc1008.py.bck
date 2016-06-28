@@ -1,0 +1,47 @@
+#!/usr/bin/python
+import time
+import smbus
+import array
+
+#print ( "Temp: %f" % (  ((((buf[0]<<8) + (buf[1]))/65536.0)*165.0 ) - 40.0  )   )
+#print ( "Humidity: %f" % (  ((((buf[0]<<8) + (buf[1]))/65536.0)*100.0 ) ) )
+
+def convertTemp(buf):
+    aT = ((((buf[0]<<8) + (buf[1]))/65536.0)*165.0 ) - 40.0
+    print ( "Temp: %f" % ( aT ) )
+    return aT
+
+def convertHumidity(buf):
+    aH = (((buf[0]<<8) + (buf[1]))/65536.0)*1000
+    print ( "Humidity: %f" % ( aH ) )
+    return aH
+
+def readTwoBytes(pointer):   
+    try:
+        bus.write_byte(HDC1008_ADDR,pointer)    
+        time.sleep(0.0635)
+        data = bus.read_byte_data(HDC1008_ADDR,2)
+        return data
+
+    except IOError, err:
+        print("Humidity Read Error")
+        print(err)
+
+    return False    
+
+bus = smbus.SMBus(1)    # 0 = /dev/i2c-0 (port I2C0), 1 = /dev/i2c-1 (port I2C1)
+
+HDC1008_ADDR = 0x40
+
+#Set configuration with two bytes written to 0x02
+myBytes = [0x10, 0x00]
+bus.write_i2c_block_data(HDC1008_ADDR,0x02,myBytes)
+time.sleep(0.2)
+
+#Read temp as two bytes from 0x00
+retVal = readTwoBytes(0x00)
+print ("Temp",retVal)
+
+retVal = readTwoBytes(0x01)
+print ("Humid",retVal)
+
