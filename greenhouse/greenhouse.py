@@ -1,3 +1,5 @@
+#!/usr/bin/python
+
 import sys
 import os
 from subprocess import *
@@ -52,15 +54,20 @@ class Greenhouse():
         #Create a report generator object
         self.reporter = ReportGenerator(self.logger,self.config['Reports'],self.db)
 
+	self.config['Greenhouse']['looptime'] = int(self.config['Greenhouse']['looptime'])
+	self.config['Camera']['interval'] = int(self.config['Camera']['interval'])
+
         
-        #Set up the camera
-        #self.cameraSetup()
+        #Set up the twitter and the camera
         self.twitterSetup()
-        self.countToHour = 0
+        self.cameraSetup()
+
+	self.systime = int(time())
         self.sunSetRise()
+        self.countToShot = 0
         
         #Raspberry Pi / Run mode specifics
-        if self.config['Greenhouse']['simulator'] == 1:
+        if self.config['Greenhouse']['simulator'] == "True":
           self.config['Greenhouse']['simulator'] = True
         else:
           self.config['Greenhouse']['simulator'] = False
@@ -97,18 +104,21 @@ class Greenhouse():
             #This is what we do all the time
             try:
 
+		#Update system time.
+		self.systime = int(time())
+
                 #Capture the next image (if its time)
-                #self.captureTimeLapseImage()
+                self.captureTimeLapseImage()
 
                 #Get the current temperature
                 if not self.config['Greenhouse']['simulator']:
                   self.getMetrics()
 
                 #Sleep the system for the specified time.
-                sleep(int(self.config['Greenhouse']['looptime']))
+                sleep(self.config['Greenhouse']['looptime'])
 
                 #Updates Reports based on interval.
-                self.report()
+                #self.report()
                 
             #Unless there is a CTRL-C Keyboard interupt
             except KeyboardInterrupt:
@@ -134,7 +144,7 @@ class Greenhouse():
 
     """Convert the current timestamp into a datetime string"""
     def getTimeStamp(self):
-        ds = datetime.now().strftime("%Y%m%d_%H%M%S")
+        ds = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         return ds
 
 
@@ -148,23 +158,24 @@ class Greenhouse():
 
 
     """This method calculates the delay in seconds till the next hour"""
-    def delayToHour(self):
-        next_hour = (datetime.now() + timedelta(hours=1)).replace(minute=0, second=0, microsecond=0)
-        self.countToHour = 10 #int((next_hour - datetime.now()).seconds)
-        self.logger.log("info",str(self.countToHour) + " to next photo")
+    def delayTime(self):
+        self.countToShot = int(self.config['Camera']['interval']) 
+        self.logger.log("info",str(self.countToShot) + " to next photo")
 
 
     """Record a timelapse series of images and create an animated gif."""
     def captureTimeLapseImage(self):
 
         #Is it time to capture an image?
-        self.countToHour -=  1
+        self.countToShot -=  self.config['Greenhouse']['looptime']
     
-        #If sunrise is greated than sunset then the next morning is yet to come.
-        if len(self.images) < 10: #self.sunrise > self.sunset:
+        #If sunrise is greater than sunset.
+        if self.sunset < self.sunrise:
+	    
+	    self.gifDone = False
 
             #If our countdown has reached zero take a photo
-            if self.countToHour <= 0:
+            if self.countToShot <= 0:
                 
                 #Try and capture an image
                 try:
@@ -173,23 +184,31 @@ class Greenhouse():
                     self.camera.capture(imgname)
                     self.images.append(imgname)
                     self.logger.log("info","Capture Time Lapse Caught" + str(len(self.images)))       
-                    self.delayToHour()
+                    self.delayTime()
 
                 #Camera IO Error
                 except IOError as e:
                     self.logger.log("critical","Capture Time Lapse Error:" + e)
 
         #Its night time and we should compile our timelapse
-        else:
+        elif self.gifDone == False:
+
             self.logger.log("info","Produce Time Lapse Caught")
             #If we have grabbed some images then we can make our gif and delete the captures.
             agif = self.makeGif(self.images)
             for image in self.images:
                 os.remove(image)
+
+	    #Reset the images and recalculate sunrise/sunset
             self.images = []
+	    self.sunSetRise()
+	    self.gifDone = True
 
             #Tweet the timelapse
             self.sendTweetWithMedia("Greenhouse Tweet Test",agif)
+	
+	else:
+	   self.logger.log("info","Gif done and waiting for the morning")
 
 
     """ This method uses all the filenames to create a animated gif """
@@ -221,11 +240,16 @@ class Greenhouse():
         somewhere.horizon = '-0:34'
 
         sun = ephem.Sun()
-        self.sunrise = somewhere.next_rising(sun)
-        self.sunset = somewhere.next_setting(sun)
-        self.sunrisets = int(mktime(ephem.localtime(self.sunrise).timetuple()))
-        self.sunsetts = int(mktime(ephem.localtime(self.sunset).timetuple()))
-        self.logger.log ("info", ("Sun Rise/Set at %s is %s %s" %(time(),self.sunrise, self.sunset)))
+        self.sunriseStr = somewhere.next_rising(sun)
+        self.sunsetStr = somewhere.next_setting(sun)
+        self.sunrise = int(mktime(ephem.localtime(self.sunriseStr).timetuple()))
+        self.sunset = int(mktime(ephem.localtime(self.sunsetStr).timetuple()))
+        self.logger.log ("info", ("Sun Rise/Set at %s is %s %s" %(self.systime,self.sunrise, self.sunset)))
+	if self.sunrise > self.sunset:
+		self.logger.log("info","Currently Day Time")
+	else:
+		self.logger.log("info","Currently Night Time")
+
 
 
     """Get the current temperature and other metrics"""
